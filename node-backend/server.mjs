@@ -11,6 +11,41 @@ const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450"><rec
 const b64=obj=>Buffer.from(JSON.stringify(obj)).toString("base64");
 app.get("/health",(_req,res)=>res.json({ok:true,configured:!missing.length,mode:process.env.NVM_ENV||"sandbox",settlementEnabled:process.env.ENABLE_SETTLEMENT==="true"}));
 app.get("/preview-image",(_req,res)=>res.type("image/svg+xml").send(svg));
+
+// Non-charging verification endpoint for a buyer token.
+// Never logs, stores, or settles the bearer credential.
+app.post("/verify-token", async (req, res) => {
+  if (!payments) return res.status(503).json({ error: "MISSING_CONFIG" });
+  const token = req.get("payment-signature");
+  if (!token || token.length > 16384) return res.status(400).json({ error: "MISSING_OR_INVALID_TOKEN" });
+  try {
+    if (detectAccessTokenVersion(token) !== 3) {
+      return res.status(400).json({ error: "V3_TOKEN_REQUIRED" });
+    }
+    const paymentRequired = buildPaymentRequired(process.env.NVM_PLAN_ID, {
+      endpoint: "/paid-image",
+      agentId: process.env.NVM_AGENT_ID,
+      httpVerb: "POST",
+      network: "stripe",
+      description: "QC Agent test image"
+    });
+    const verification = await payments.facilitator.verifyPermissions({
+      paymentRequired,
+      x402AccessToken: token,
+      maxAmount: 1n
+    });
+    return res.status(verification?.isValid === true ? 200 : 402).json({
+      verified: verification?.isValid === true,
+      settled: false,
+      imageDelivered: false,
+      error: verification?.isValid === true ? null : "INVALID_PERMISSION"
+    });
+  } catch (error) {
+    console.error("Verification error code:", error?.code || "unknown");
+    return res.status(502).json({ error: "VERIFY_FAILED", verified: false, settled: false });
+  }
+});
+
 app.post("/paid-image",async(req,res)=>{
   if(!payments) return res.status(503).json({error:"MISSING_CONFIG"});
   if(process.env.ENABLE_SETTLEMENT!=="true") return res.status(503).json({error:"SETTLEMENT_DISABLED"});
