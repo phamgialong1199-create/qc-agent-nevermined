@@ -14,6 +14,23 @@ const payments=missing.length?null:Payments.getInstance({nvmApiKey:process.env.N
 const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450"><rect width="800" height="450" fill="#102a43"/><circle cx="400" cy="180" r="90" fill="#22d3ee"/><path d="M355 180 L385 210 L450 145" fill="none" stroke="#102a43" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/><text x="400" y="325" fill="white" font-size="36" font-family="Arial" text-anchor="middle">QC AGENT TEST</text></svg>`;
 const b64=obj=>Buffer.from(JSON.stringify(obj)).toString("base64");
 app.get("/health",(_req,res)=>res.json({ok:true,configured:!missing.length,mode:process.env.NVM_ENV||"sandbox",settlementEnabled:process.env.ENABLE_SETTLEMENT==="true" && Boolean(ledger),ledgerConfigured:Boolean(ledger)}));
+app.get("/ledger-health",async(_req,res)=>{
+  if(!ledger) return res.status(503).json({ok:false,redisConnected:false,error:"REDIS_NOT_CONFIGURED"});
+  try {
+    const pong=await ledger.ping();
+    if(pong!=="PONG") throw new Error("Redis did not respond");
+    let persistence="unverified";
+    try {
+      const info=await ledger.info("persistence");
+      const aof=/aof_enabled:(\\d+)/.exec(info)?.[1];
+      const rdb=/rdb_last_save_time:(\\d+)/.exec(info)?.[1];
+      persistence=aof==="1"?"aof-enabled":rdb&&Number(rdb)>0?"rdb-info-present":"not-confirmed";
+    } catch {}
+    return res.json({ok:true,redisConnected:true,persistence,paymentReady:false});
+  } catch {
+    return res.status(503).json({ok:false,redisConnected:false,error:"REDIS_UNREACHABLE"});
+  }
+});
 app.get("/preview-image",(_req,res)=>res.type("image/svg+xml").send(svg));
 app.get("/", (_req,res)=>res.type("html").send(`<!doctype html><html lang="vi"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>QC Agent</title><style>body{font:16px system-ui;background:#0b1e2c;color:white;max-width:680px;margin:7vh auto;padding:22px}section{background:#163347;padding:26px;border-radius:18px}button,input{font:inherit;padding:12px;border-radius:9px}input{box-sizing:border-box;width:100%;margin:12px 0;background:#eaf7fa}button{background:#3dd5eb;border:0;cursor:pointer}a{color:#6ee7f9}#status{white-space:pre-wrap}</style><section><h1>QC Agent — $1/lượt</h1><p>Thanh toán bằng Nevermined x402. Chỉ nhận ảnh khi hệ thống xác nhận giao dịch.</p><p><a href="https://nevermined.app/checkout/${process.env.NVM_AGENT_ID}" target="_blank" rel="noopener">Mở Nevermined để cấp quyền thanh toán</a></p><label for="token">X402 payment-signature của người mua</label><input id="token" type="password" autocomplete="off" placeholder="Dán token x402 v3"><button id="pay">Thanh toán $1 và nhận ảnh</button><p id="status" role="status"></p><div id="result"></div><p><a href="/preview-image">Xem ảnh mẫu miễn phí</a></p></section><script>document.getElementById('pay').onclick=async()=>{const t=document.getElementById('token').value.trim(),s=document.getElementById('status'),b=document.getElementById('pay');if(!t){s.textContent='Cần token thanh toán x402 v3 hợp lệ.';return}b.disabled=true;s.textContent='Đang xác thực và quyết toán. Không bấm lại nếu có lỗi mạng.';try{const r=await fetch('/paid-image',{method:'POST',headers:{'payment-signature':t}});if(!r.ok){const e=await r.json();s.textContent='Chưa giao ảnh: '+(e.error||r.status);return}const blob=await r.blob();document.getElementById('result').replaceChildren(Object.assign(document.createElement('img'),{src:URL.createObjectURL(blob),alt:'QC Agent result',width:600}));s.textContent='Đã nhận ảnh sau khi xác nhận thanh toán.';}catch(e){s.textContent='Không rõ trạng thái giao dịch. Kiểm tra Nevermined trước khi thử lại.'}finally{b.disabled=false;document.getElementById('token').value=''}};</script></html>`));
 
