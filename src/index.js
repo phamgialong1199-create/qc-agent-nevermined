@@ -18,13 +18,29 @@ export default {
   if(url.pathname==="/preview-image") return new Response(svg,{headers:{"content-type":"image/svg+xml; charset=utf-8","cache-control":"no-store"}});
   if(url.pathname!=="/paid-image") return json({service:"QC Agent",endpoints:["/health","/payment-preflight","/preview-image","/paid-image"]});
   if(request.method!=="POST") return json({error:"Use POST /paid-image"},405,{allow:"POST"});
-  if(env.NVM_ENABLE_LIVE_CHARGES!=="true") return json({error:"LIVE_CHARGING_DISABLED",message:"Payment integration installed but live charges are disabled."},503);
   if(!env.NVM_API_KEY||!env.NVM_AGENT_ID||!env.NVM_PLAN_ID) return json({error:"Missing server payment configuration"},503);
+  const paymentRequired = {
+    x402Version: 2,
+    error: "Payment required",
+    resource: {url: url.origin + "/paid-image", description:"QC Agent test image",mimeType:"image/svg+xml"},
+    accepts: [{
+      scheme:"nvm:card-delegation",
+      network:"offchain",
+      planId:env.NVM_PLAN_ID,
+      extra:{version:"1",agentId:env.NVM_AGENT_ID}
+    }],
+    extensions:{}
+  };
+  const paymentHeaders = {"payment-required":b64(paymentRequired)};
+  if(!request.headers.get("payment-signature"))
+    return json(paymentRequired,402,paymentHeaders);
+  if(env.NVM_ENABLE_LIVE_CHARGES!=="true")
+    return json({error:"LIVE_CHARGING_DISABLED",message:"No payment attempt was made."},503);
   // Safe preflight: publish the configured plan without charging or exposing secrets.
   // Nevermined requires a buyer-issued payment-signature token and verified settlement.
   // Do not return the image until the REST verify/settle contract is validated.
   return json({
-    error:"Payment Required",
+    error:"PAYMENT_SETTLEMENT_NOT_IMPLEMENTED",
     status:"AWAITING_VERIFIED_X402_INTEGRATION",
     scheme:"nvm:card-delegation",
     planId:env.NVM_PLAN_ID,
