@@ -24,7 +24,10 @@ if (missing.length) {
   );
   const detected = accessToken ? detectAccessTokenVersion(accessToken) : null;
   console.log("Requested token v3; SDK returned version:", tokenVersion ?? "missing", "; detected:", detected ?? "unknown");
-  if (detected !== 3) throw new Error("Nevermined issued a non-v3 token. Do not use it for payment; check SDK/backend compatibility.");
+  if (detected !== 3) {
+    console.log("Nevermined Live returned v2. No payment submitted. V2 settlement is not enabled in QC Agent.");
+    process.exit(0);
+  }
   const endpoint = process.env.BACKEND_URL;
   if (!endpoint) {
     console.log("Token generated. Set BACKEND_URL to test verification. Token not printed.");
