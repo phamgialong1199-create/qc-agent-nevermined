@@ -1,0 +1,42 @@
+<!doctype html><html lang="vi"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>QC Agent | Kết nối Nevermined</title><style>body{font:16px system-ui;background:#0b1e2c;color:white;max-width:640px;margin:6vh auto;padding:20px}main{background:#17364b;border-radius:16px;padding:25px}button{background:#38d4eb;border:0;border-radius:8px;padding:14px;cursor:pointer;font-weight:700}a{color:#70e6ff}#status{white-space:pre-wrap}</style><main><h1>Kết nối Nevermined</h1><p>Đăng nhập Nevermined và cấp quyền cho QC Agent. Không nhập API Key vào website này.</p><button id="connect">Kết nối Nevermined Live</button><p id="status" role="status"></p><p><a href="/">Quay lại QC Agent</a></p></main><script type="module">
+const base=location.origin,clientId=base+'/oauth/client.json',redirectUri=base+'/oauth/callback';
+const issuer='https://api.live.nevermined.app';
+const agentId='44328239811039711515836904575110608628918310963073866130678593051453425887088';
+const planId='16814508917622167141437966878895351233862993416119437544349158173761791276724';
+const status=document.querySelector('#status');
+function rand(){let x=crypto.getRandomValues(new Uint8Array(32));return Array.from(x,b=>b.toString(16).padStart(2,'0')).join('');}
+function b64url(bytes){return btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
+async function challenge(verifier){return b64url(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(verifier))));}
+document.querySelector('#connect').onclick=async()=>{
+ try{
+  const verifier=rand()+rand(),state=rand();
+  sessionStorage.setItem('qc_pkce_verifier',verifier);sessionStorage.setItem('qc_oauth_state',state);
+  const url=new URL('https://nevermined.app/oauth/authorize?network=live');
+  Object.entries({response_type:'code',client_id:clientId,redirect_uri:redirectUri,code_challenge:await challenge(verifier),code_challenge_method:'S256',state,agent_id:agentId,plan_id:planId,resource:base+'/paid-image'}).forEach(([k,v])=>url.searchParams.set(k,v));
+  location.assign(url.href);
+ }catch(e){status.textContent='Không mở được đăng nhập: '+e.message;}
+};
+if(location.pathname==='/oauth/callback'){
+ document.querySelector('#connect').hidden=true;
+ const params=new URLSearchParams(location.search);
+ const expected=sessionStorage.getItem('qc_oauth_state'),verifier=sessionStorage.getItem('qc_pkce_verifier');
+ sessionStorage.removeItem('qc_oauth_state');sessionStorage.removeItem('qc_pkce_verifier');
+ if(!expected||params.get('state')!==expected||params.get('iss')!==issuer||!verifier){
+  status.textContent='OAuth không hợp lệ (state hoặc issuer). Vui lòng kết nối lại.';
+ }else if(params.has('error')){status.textContent='Người dùng từ chối hoặc Nevermined báo lỗi: '+params.get('error');}
+ else if(params.has('code')){
+  status.textContent='Đã nhận authorization code. Đang đổi token...';
+  try{
+   const response=await fetch(issuer+'/oauth/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({grant_type:'authorization_code',code:params.get('code'),redirect_uri:redirectUri,client_id:clientId,code_verifier:verifier})});
+   const data=await response.json();
+   if(!response.ok||!data.access_token)throw Error(data.error||'Không nhận được access_token');
+   // Never send bearer token to logs or URL. User may copy it into the existing payment page.
+   const field=document.createElement('textarea');field.readOnly=true;field.rows=4;field.style.width='100%';field.value=data.access_token;
+   const copy=document.createElement('button');copy.textContent='Sao chép quyền x402';copy.onclick=()=>navigator.clipboard.writeText(field.value);
+   status.textContent='Nevermined đã cấp quyền. Chỉ sử dụng token trên QC Agent.';
+   status.after(field,copy);
+   history.replaceState({},'',location.pathname);
+  }catch(e){status.textContent='Không đổi được OAuth code: '+e.message+' (có thể do CORS hoặc cấu hình OAuth)';}
+ }
+}
+</script></html>
