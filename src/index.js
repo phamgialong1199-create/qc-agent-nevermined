@@ -48,7 +48,14 @@ export default {
       signal:AbortSignal.timeout(12000)
     });
     const result=await response.json().catch(()=>({}));
-    if(!response.ok) return json({error:"Nevermined verification HTTP error",upstreamStatus:response.status},502);
+    if(!response.ok) {
+      // Never expose upstream request headers, API keys, or payment signatures.
+      const safeFields = {};
+      for (const key of ["error","message","detail","code","reason","invalidReason"]) {
+        if (typeof result[key] === "string") safeFields[key] = result[key].slice(0,300).replace(/Bearer\\s+[^\\s]+/gi,"Bearer [REDACTED]");
+      }
+      return json({error:"Nevermined verification HTTP error",upstreamStatus:response.status,upstream:safeFields},502);
+    }
     if(result.isValid!==true) return json({error:"Payment authorization invalid",verified:false},402,paymentHeaders);
     return json({verified:true,settled:false,imageDelivered:false,message:"Authorization verified. Settlement disabled until replay-safe storage is configured."},200);
   } catch(e) {
