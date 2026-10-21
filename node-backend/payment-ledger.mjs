@@ -6,6 +6,7 @@ export async function initLedger(){
  if(!pool)return false;
  try{
  await pool.query("CREATE TABLE IF NOT EXISTS qc_payments(token_hash text PRIMARY KEY,status text NOT NULL,receipt jsonb,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now())");
+ await pool.query("CREATE TABLE IF NOT EXISTS qc_purchase_attempts(purchase_id uuid PRIMARY KEY,token_hash text NOT NULL,status text NOT NULL,receipt jsonb,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now())");
  ready=true;return true;
  }catch(e){console.error("Postgres initialization failed",e.code||"unknown");return false;}
 }
@@ -18,4 +19,24 @@ export async function claim(token){
 export async function priorClaim(hash){const r=await pool.query("SELECT status,receipt FROM qc_payments WHERE token_hash=$1",[hash]);return r.rows[0]||null;}
 export async function finishClaim(hash,status,receipt=null){
  await pool.query("UPDATE qc_payments SET status=$2,receipt=$3::jsonb,updated_at=now() WHERE token_hash=$1",[hash,status,receipt===null?null:JSON.stringify(receipt)]);
+}
+
+/**
+ * One purchase attempt per buyer-generated UUID, not one per reusable v2 token.
+ * Never re-use an uncertain purchase ID for a new charge.
+ */
+export async function claimPurchase(token,purchaseId){
+ const tokenHash=createHash("sha256").update(token).digest("hex");
+ const r=await pool.query(
+  "INSERT INTO qc_purchase_attempts(purchase_id,token_hash,status) VALUES($1,$2,'processing') ON CONFLICT DO NOTHING RETURNING purchase_id",
+  [purchaseId,tokenHash]);
+ return {purchaseId,tokenHash,newClaim:r.rowCount===1};
+}
+export async function getPurchase(purchaseId){
+ const r=await pool.query("SELECT token_hash,status,receipt FROM qc_purchase_attempts WHERE purchase_id=$1",[purchaseId]);
+ return r.rows[0]||null;
+}
+export async function finishPurchase(purchaseId,status,receipt=null){
+ await pool.query("UPDATE qc_purchase_attempts SET status=$2,receipt=$3::jsonb,updated_at=now() WHERE purchase_id=$1",
+  [purchaseId,status,receipt===null?null:JSON.stringify(receipt)]);
 }
