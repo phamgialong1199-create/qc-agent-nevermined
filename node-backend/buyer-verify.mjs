@@ -1,4 +1,4 @@
-import { Payments } from "@nevermined-io/payments";
+import { Payments, detectAccessTokenVersion } from "@nevermined-io/payments";
 
 // Buyer-side verification smoke test. Does not settle or charge.
 const required = ["BUYER_NVM_API_KEY", "BUYER_DELEGATION_ID", "NVM_AGENT_ID", "NVM_PLAN_ID"];
@@ -8,21 +8,21 @@ if (missing.length) {
   process.exitCode = 1;
 } else {
   const payments = Payments.getInstance({
-    nvmApiKey: process.env.BUYER_NVM_API_KEY,
-    environment: "live"
+    nvmApiKey: process.env.BUYER_NVM_API_KEY
   });
   const { accessToken, tokenVersion } = await payments.x402.getX402AccessToken(
     process.env.NVM_PLAN_ID,
     process.env.NVM_AGENT_ID,
     {
-      scheme: "nvm:card-delegation",
       delegationConfig: { delegationId: process.env.BUYER_DELEGATION_ID },
       resource: { url: "/paid-image" },
       httpVerb: "POST",
       tokenVersion: 3
     }
   );
-  if (tokenVersion !== 3) throw new Error("Expected a single-use v3 token");
+  const detected = accessToken ? detectAccessTokenVersion(accessToken) : null;
+  console.log("Requested token v3; SDK returned version:", tokenVersion ?? "missing", "; detected:", detected ?? "unknown");
+  if (detected !== 3) throw new Error("Nevermined issued a non-v3 token. Do not use it for payment; check SDK/backend compatibility.");
   const endpoint = process.env.BACKEND_URL;
   if (!endpoint) {
     console.log("Token generated. Set BACKEND_URL to test verification. Token not printed.");
