@@ -80,8 +80,14 @@ app.post("/paid-image",async(req,res)=>{
   if(process.env.ENABLE_SETTLEMENT!=="true") return res.status(503).json({error:"SETTLEMENT_DISABLED"});
   if(!ledger) return res.status(503).json({error:"PAYMENT_LEDGER_NOT_CONFIGURED"});
   if(token.length>16384) return res.status(400).json({error:"TOKEN_TOO_LONG"});
-  // v2 tokens are reusable; require a single-use v3 token for this test.
-  if(detectAccessTokenVersion(token)!==3) return res.status(402).json({error:"SINGLE_USE_V3_TOKEN_REQUIRED"});
+  // Live Nevermined currently returns v2 for some card delegations.
+  // A v2 token is reusable, so NEVER settle it without a durable ledger and
+  // explicit opt-in. Redis Free with persistence disabled is not sufficient.
+  const tokenVersion=detectAccessTokenVersion(token);
+  if(tokenVersion!==2 && tokenVersion!==3)
+    return res.status(402).json({error:"UNSUPPORTED_X402_TOKEN_VERSION"});
+  if(tokenVersion===2 && (process.env.ALLOW_X402_V2!=="true" || process.env.PERSISTENT_LEDGER_READY!=="true"))
+    return res.status(503).json({error:"V2_REQUIRES_DURABLE_REPLAY_PROTECTION"});
   const nonceKey="qc-payment:"+createHash("sha256").update(token).digest("hex");
   try {
     const claimed=await ledger.set(nonceKey,JSON.stringify({state:"processing",createdAt:Date.now()}),"NX");
