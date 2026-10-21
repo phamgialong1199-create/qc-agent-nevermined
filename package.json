@@ -6,6 +6,9 @@
     "deploy": "wrangler deploy",
     "dev": "wrangler dev"
   },
+  "dependencies": {
+    "@nevermined-io/payments": "latest"
+  },
   "devDependencies": {
     "wrangler": "^4.0.0"
   }
