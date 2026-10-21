@@ -44,14 +44,15 @@ app.post("/verify-token", async (req, res) => {
   const token = req.get("payment-signature");
   if (!token || token.length > 16384) return res.status(400).json({ error: "MISSING_OR_INVALID_TOKEN" });
   try {
-    if (detectAccessTokenVersion(token) !== 3) {
-      return res.status(400).json({ error: "V3_TOKEN_REQUIRED" });
+    const version = detectAccessTokenVersion(token);
+    if (version !== 2 && version !== 3) {
+      return res.status(400).json({ error: "UNSUPPORTED_X402_TOKEN_VERSION" });
     }
     const paymentRequired = buildPaymentRequired(process.env.NVM_PLAN_ID, {
       endpoint: "/paid-image",
       agentId: process.env.NVM_AGENT_ID,
       httpVerb: "POST",
-      network: "stripe",
+      network: process.env.NVM_PAYMENT_NETWORK || "stripe",
       description: "QC Agent test image"
     });
     const verification = await payments.facilitator.verifyPermissions({
@@ -75,7 +76,7 @@ app.post("/paid-image",async(req,res)=>{
   if(!payments) return res.status(503).json({error:"MISSING_CONFIG"});
   const paymentRequired=buildPaymentRequired(process.env.NVM_PLAN_ID,{
     endpoint:"/paid-image",agentId:process.env.NVM_AGENT_ID,httpVerb:"POST",
-    network:"stripe",description:"QC Agent test image"
+    network:process.env.NVM_PAYMENT_NETWORK||"stripe",description:"QC Agent test image"
   });
   const headers={"payment-required":b64(paymentRequired)};
   const token=req.get("payment-signature");
