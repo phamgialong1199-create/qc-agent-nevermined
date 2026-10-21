@@ -76,7 +76,7 @@ app.post("/paid-image",async(req,res)=>{
   });
   const headers={"payment-required":b64(paymentRequired)};
   const token=req.get("payment-signature");
-  if(!token) return res.set(headers).status(402).json({error:"PAYMENT_REQUIRED",message:"Buyer must supply a Nevermined x402 v3 payment-signature."});
+  if(!token) return res.set(headers).status(402).json({error:"PAYMENT_REQUIRED",message:"Buyer must supply a Nevermined x402 payment-signature."});
   if(process.env.ENABLE_SETTLEMENT!=="true") return res.status(503).json({error:"SETTLEMENT_DISABLED"});
   if(!ledger) return res.status(503).json({error:"PAYMENT_LEDGER_NOT_CONFIGURED"});
   if(token.length>16384) return res.status(400).json({error:"TOKEN_TOO_LONG"});
@@ -88,7 +88,7 @@ app.post("/paid-image",async(req,res)=>{
     return res.status(402).json({error:"UNSUPPORTED_X402_TOKEN_VERSION"});
   if(tokenVersion===2 && (process.env.ALLOW_X402_V2!=="true" || process.env.PERSISTENT_LEDGER_READY!=="true"))
     return res.status(503).json({error:"V2_REQUIRES_DURABLE_REPLAY_PROTECTION"});
-  const nonceKey="qc-payment:"+createHash("sha256").update(token).digest("hex");
+  // Fail closed unless the storage service reports durable persistence.\n  // A manually set environment flag cannot override a non-persistent Redis instance.\n  if(tokenVersion===2) {\n    try {\n      const persistence=await ledger.info("persistence");\n      const aof=Number(/(?:^|\\n)aof_enabled:(\\d+)/.exec(persistence)?.[1]||0);\n      const rdb=Number(/(?:^|\\n)rdb_last_save_time:(\\d+)/.exec(persistence)?.[1]||0);\n      if(aof!==1 && rdb===0) return res.status(503).json({error:"DURABLE_LEDGER_REQUIRED_FOR_V2"});\n    } catch {return res.status(503).json({error:"LEDGER_PERSISTENCE_CHECK_FAILED"});}\n  }\n  const nonceKey="qc-payment:"+createHash("sha256").update(token).digest("hex");
   try {
     const claimed=await ledger.set(nonceKey,JSON.stringify({state:"processing",createdAt:Date.now()}),"NX");
     if(claimed!=="OK") {
