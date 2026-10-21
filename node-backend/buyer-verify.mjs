@@ -27,7 +27,7 @@ if (missing.length) {
   if (!endpoint) {
     console.log("Token generated. Set BACKEND_URL to test verification. Token not printed.");
   } else {
-    const response = await fetch(new URL("/paid-image", endpoint), {
+    const response = await fetch(new URL("/verify-token", endpoint), {
       method: "POST",
       headers: { "payment-signature": accessToken }
     });
