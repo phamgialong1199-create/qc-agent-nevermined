@@ -1,0 +1,15 @@
+{
+  "client_id": "https://qc-agent-nevermined.onrender.com/oauth/client.json",
+  "client_name": "QC Agent Buyer Portal",
+  "client_uri": "https://qc-agent-nevermined.onrender.com",
+  "redirect_uris": [
+    "https://qc-agent-nevermined.onrender.com/oauth/callback"
+  ],
+  "grant_types": [
+    "authorization_code"
+  ],
+  "response_types": [
+    "code"
+  ],
+  "token_endpoint_auth_method": "none"
+}
