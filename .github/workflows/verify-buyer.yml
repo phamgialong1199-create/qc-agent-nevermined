@@ -1,0 +1,33 @@
+name: Verify Nevermined Buyer Token (No Charge)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: node-backend
+    env:
+      BUYER_NVM_API_KEY: ${{ secrets.BUYER_NVM_API_KEY }}
+      BUYER_DELEGATION_ID: ${{ secrets.BUYER_DELEGATION_ID }}
+      NVM_PLAN_ID: ${{ vars.NVM_PLAN_ID }}
+      NVM_AGENT_ID: ${{ vars.NVM_AGENT_ID }}
+      BACKEND_URL: https://qc-agent-nevermined.onrender.com
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check configuration without revealing values
+        run: |
+          test -n "$BUYER_NVM_API_KEY"
+          test -n "$BUYER_DELEGATION_ID"
+          test -n "$NVM_PLAN_ID"
+          test -n "$NVM_AGENT_ID"
+      - name: Install official Nevermined SDK
+        run: npm install --no-audit --no-fund
+      - name: Generate v3 token and verify without settlement
+        run: node buyer-verify.mjs
