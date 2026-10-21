@@ -49,16 +49,15 @@ app.post("/verify-token", async (req, res) => {
 
 app.post("/paid-image",async(req,res)=>{
   if(!payments) return res.status(503).json({error:"MISSING_CONFIG"});
-  if(process.env.ENABLE_SETTLEMENT!=="true") return res.status(503).json({error:"SETTLEMENT_DISABLED"});
-  // Production needs a durable request/nonce ledger and idempotency reconciliation.
-  if(process.env.DURABLE_LEDGER_READY!=="true") return res.status(503).json({error:"DURABLE_LEDGER_REQUIRED"});
   const paymentRequired=buildPaymentRequired(process.env.NVM_PLAN_ID,{
     endpoint:"/paid-image",agentId:process.env.NVM_AGENT_ID,httpVerb:"POST",
     network:"stripe",description:"QC Agent test image"
   });
   const headers={"payment-required":b64(paymentRequired)};
   const token=req.get("payment-signature");
-  if(!token) return res.set(headers).status(402).json({error:"PAYMENT_REQUIRED"});
+  if(!token) return res.set(headers).status(402).json({error:"PAYMENT_REQUIRED",message:"Buyer must supply a Nevermined x402 v3 payment-signature."});
+  if(process.env.ENABLE_SETTLEMENT!=="true") return res.status(503).json({error:"SETTLEMENT_DISABLED"});
+  if(process.env.DURABLE_LEDGER_READY!=="true") return res.status(503).json({error:"DURABLE_LEDGER_REQUIRED"});
   if(token.length>16384) return res.status(400).json({error:"TOKEN_TOO_LONG"});
   // v2 tokens are reusable; require a single-use v3 token for this test.
   if(detectAccessTokenVersion(token)!==3) return res.status(402).json({error:"SINGLE_USE_V3_TOKEN_REQUIRED"});
