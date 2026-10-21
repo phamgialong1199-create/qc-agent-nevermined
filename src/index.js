@@ -25,7 +25,7 @@ export default {
     resource: {url: url.origin + "/paid-image", description:"QC Agent test image",mimeType:"image/svg+xml"},
     accepts: [{
       scheme:"nvm:card-delegation",
-      network:"offchain",
+      network:"stripe",
       planId:env.NVM_PLAN_ID,
       extra:{version:"1",agentId:env.NVM_AGENT_ID}
     }],
