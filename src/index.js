@@ -34,8 +34,7 @@ export default {
   const paymentHeaders = {"payment-required":b64(paymentRequired)};
   if(!request.headers.get("payment-signature"))
     return json(paymentRequired,402,paymentHeaders);
-  if(env.NVM_ENABLE_LIVE_CHARGES!=="true")
-    return json({error:"LIVE_CHARGING_DISABLED",message:"No payment attempt was made."},503);
+  // Verification does not charge. Never enable settlement until its contract and idempotency are validated.
   // Verification-only integration. Settlement is deliberately disabled until
   // an atomic, persistent idempotency store is configured for real card charges.
   const token=request.headers.get("payment-signature");
