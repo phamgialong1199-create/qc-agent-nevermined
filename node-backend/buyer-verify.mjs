@@ -14,6 +14,8 @@ if (missing.length) {
     process.env.NVM_PLAN_ID,
     process.env.NVM_AGENT_ID,
     {
+      scheme: "nvm:card-delegation",
+      network: "visa",
       delegationConfig: { delegationId: process.env.BUYER_DELEGATION_ID },
       resource: { url: "/paid-image" },
       httpVerb: "POST",
