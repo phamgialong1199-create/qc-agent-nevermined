@@ -11,6 +11,7 @@ const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450"><rec
 const b64=obj=>Buffer.from(JSON.stringify(obj)).toString("base64");
 app.get("/health",(_req,res)=>res.json({ok:true,configured:!missing.length,mode:process.env.NVM_ENV||"sandbox",settlementEnabled:process.env.ENABLE_SETTLEMENT==="true"}));
 app.get("/preview-image",(_req,res)=>res.type("image/svg+xml").send(svg));
+app.get("/", (_req,res) => res.type("html").send(`<!doctype html><html lang="vi"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>QC Agent</title><style>body{font-family:system-ui;background:#0b1e2c;color:white;max-width:720px;margin:8vh auto;padding:24px}a{color:#6ee7f9}section{background:#163347;padding:25px;border-radius:18px}button{padding:12px 18px;border:0;border-radius:10px;background:#3dd5eb;color:#052332;font-weight:700;cursor:pointer}p{line-height:1.6}</style><section><h1>QC Agent</h1><p>Kiểm tra chất lượng nội dung qua API. Gói Nevermined: $1 mỗi lượt.</p><p>Hiện chức năng thu tiền tự động chưa được kích hoạt. Không có khoản phí nào phát sinh từ trang này.</p><p><a href="/preview-image">Xem ảnh mẫu miễn phí</a> · <a href="/health">Kiểm tra hệ thống</a></p><button onclick="alert('Chức năng thanh toán đang được hoàn thiện; chưa nhận thanh toán.')">Dùng QC Agent — $1/lượt</button></section></html>`));
 
 // Non-charging verification endpoint for a buyer token.
 // Never logs, stores, or settles the bearer credential.
