@@ -36,17 +36,25 @@ export default {
     return json(paymentRequired,402,paymentHeaders);
   if(env.NVM_ENABLE_LIVE_CHARGES!=="true")
     return json({error:"LIVE_CHARGING_DISABLED",message:"No payment attempt was made."},503);
-  // Safe preflight: publish the configured plan without charging or exposing secrets.
-  // Nevermined requires a buyer-issued payment-signature token and verified settlement.
-  // Do not return the image until the REST verify/settle contract is validated.
-  return json({
-    error:"PAYMENT_SETTLEMENT_NOT_IMPLEMENTED",
-    status:"AWAITING_VERIFIED_X402_INTEGRATION",
-    scheme:"nvm:card-delegation",
-    planId:env.NVM_PLAN_ID,
-    agentId:env.NVM_AGENT_ID,
-    priceUSD:1,
-    message:"A buyer payment-signature and confirmed Nevermined settlement are required. No charge was attempted."
-  },402);
+  // Verification-only integration. Settlement is deliberately disabled until
+  // an atomic, persistent idempotency store is configured for real card charges.
+  const token=request.headers.get("payment-signature");
+  if(!token) return json(paymentRequired,402,paymentHeaders);
+  if(token.length>16384) return json({error:"Invalid token length"},400);
+  try {
+    const response=await fetch("https://facilitator.live.nevermined.app/api/v1/x402/verify",{
+      method:"POST",
+      headers:{"authorization":"Bearer "+env.NVM_API_KEY,"content-type":"application/json"},
+      body:JSON.stringify({paymentRequired,x402AccessToken:token,maxAmount:"1"}),
+      signal:AbortSignal.timeout(12000)
+    });
+    const result=await response.json().catch(()=>({}));
+    if(!response.ok) return json({error:"Nevermined verification HTTP error",upstreamStatus:response.status},502);
+    if(result.isValid!==true) return json({error:"Payment authorization invalid",verified:false},402,paymentHeaders);
+    return json({verified:true,settled:false,imageDelivered:false,message:"Authorization verified. Settlement disabled until replay-safe storage is configured."},200);
+  } catch(e) {
+    console.error("Nevermined verify error",String(e?.message||e));
+    return json({error:"Nevermined verification unavailable"},502);
+  }
  }
 };
