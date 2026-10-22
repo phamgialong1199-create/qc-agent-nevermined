@@ -2,7 +2,7 @@ import express from "express";
 import {readFile} from "node:fs/promises";
 import Redis from "ioredis";
 import {initLedger,ledgerReady,claim,priorClaim,finishClaim} from "./payment-ledger.mjs";
-import { createHash } from "node:crypto";
+import { createPaidImageHandler } from "./payment-handler.mjs";
 import { Payments, buildPaymentRequired, detectAccessTokenVersion } from "@nevermined-io/payments";
 
 const app=express();
@@ -39,7 +39,7 @@ app.get("/get-x402",(_req,res)=>res.type("html").send(`<!doctype html><html lang
 app.get("/oauth/client.json",async(_req,res)=>{res.set("Cache-Control","public, max-age=300");res.type("application/json").send(await readFile(new URL("./oauth-client.json",import.meta.url),"utf8"));});
 app.get(["/oauth/start","/oauth/callback"],async(_req,res)=>{res.set("Cache-Control","no-store");res.type("html").send(await readFile(new URL("./oauth-portal.html",import.meta.url),"utf8"));});
 app.get("/preview-image",(_req,res)=>res.type("image/svg+xml").send(svg));
-app.get("/",(_req,res)=>res.type("html").send(`<!doctype html><html lang="vi"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>QC Agent</title><style>body{font:16px system-ui;background:#0b1e2c;color:white;max-width:680px;margin:7vh auto;padding:22px}section{background:#163347;padding:26px;border-radius:18px}button,input{font:inherit;padding:12px;border-radius:9px}input{box-sizing:border-box;width:100%;margin:12px 0;background:#eaf7fa}button{background:#3dd5eb;border:0;cursor:pointer}a{color:#6ee7f9}#status{white-space:pre-wrap}</style><section><h1>QC Agent — $1/lượt</h1><p>Thanh toán bằng Nevermined x402. Chỉ nhận ảnh sau khi giao dịch được xác nhận.</p><p>Khách sử dụng x402: nhập payment-signature được ứng dụng Nevermined của mình tạo. Không nhập API Key, mật khẩu hoặc thông tin thẻ vào trang này.</p><label for="token">X402 payment-signature</label><input id="token" type="password" autocomplete="off" placeholder="Token x402 v2 hoặc v3"><button id="pay">Gửi yêu cầu thanh toán $1</button><p id="status" role="status"></p><div id="result"></div><p><a href="/get-x402">Hướng dẫn lấy token x402 an toàn</a></p><p><a href="/preview-image">Xem ảnh mẫu miễn phí</a></p></section><script>document.getElementById('pay').onclick=async()=>{const t=document.getElementById('token').value.trim(),s=document.getElementById('status'),b=document.getElementById('pay');if(!t){s.textContent='Cần payment-signature hợp lệ, không phải API Key.';return}b.disabled=true;s.textContent='Đang xử lý. Không thử lại nếu giao dịch không rõ trạng thái.';try{const r=await fetch('/paid-image',{method:'POST',headers:{'payment-signature':t}});if(!r.ok){const e=await r.json();s.textContent='Không giao ảnh: '+(e.error||r.status);return}const blob=await r.blob();document.getElementById('result').replaceChildren(Object.assign(document.createElement('img'),{src:URL.createObjectURL(blob),alt:'QC Agent result',width:600}));s.textContent='Đã nhận ảnh.';}catch(e){s.textContent='Không rõ trạng thái. Kiểm tra Nevermined trước khi thử lại.'}finally{b.disabled=false;document.getElementById('token').value=''}};</script></html>`));
+app.get("/",(_req,res)=>res.type("html").send(`<!doctype html><html lang="vi"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>QC Agent</title><style>body{font:16px system-ui;background:#0b1e2c;color:white;max-width:680px;margin:7vh auto;padding:22px}section{background:#163347;padding:26px;border-radius:18px}button,input{font:inherit;padding:12px;border-radius:9px}input{box-sizing:border-box;width:100%;margin:12px 0;background:#eaf7fa}button{background:#3dd5eb;border:0;cursor:pointer}a{color:#6ee7f9}#status{white-space:pre-wrap}</style><section><h1>QC Agent — $1/lượt</h1><p>Thanh toán bằng Nevermined x402. Chỉ nhận ảnh sau khi giao dịch được xác nhận.</p><p>Khách sử dụng x402: nhập payment-signature được ứng dụng Nevermined của mình tạo. Không nhập API Key, mật khẩu hoặc thông tin thẻ vào trang này.</p><label for="token">X402 payment-signature</label><input id="token" type="password" autocomplete="off" placeholder="Token x402 v2 hoặc v3"><button id="pay">Gửi yêu cầu thanh toán $1</button><p id="status" role="status"></p><div id="result"></div><p><a href="/get-x402">Hướng dẫn lấy token x402 an toàn</a></p><p><a href="/preview-image">Xem ảnh mẫu miễn phí</a></p></section><script>let orderId=sessionStorage.getItem('qc-pending-order');document.getElementById('pay').textContent=orderId?'Kiểm tra lại đơn đang chờ':'Mua $1';document.getElementById('pay').onclick=async()=>{const t=document.getElementById('token').value.trim(),s=document.getElementById('status'),b=document.getElementById('pay');if(!t){s.textContent='Cần payment-signature hợp lệ, không phải API Key.';return}b.disabled=true;try{if(!orderId){orderId=crypto.randomUUID();sessionStorage.setItem('qc-pending-order',orderId)}s.textContent='Đang xử lý đơn '+orderId+'.';const r=await fetch('/paid-image',{method:'POST',headers:{'payment-signature':t,'Idempotency-Key':orderId}});if(!r.ok){const e=await r.json();s.textContent='Đơn '+orderId+': '+(e.error||r.status)+(e.providerCode?' ('+e.providerCode+')':'')+'. Không tạo đơn mới nếu chưa rõ trạng thái giao dịch.';return}const blob=await r.blob();document.getElementById('result').replaceChildren(Object.assign(document.createElement('img'),{src:URL.createObjectURL(blob),alt:'QC Agent result',width:600}));const v=r.headers.get('x402-token-version');s.textContent='Đã nhận ảnh cho đơn '+orderId+'. '+(v==='3'?'Lấy token mới để mua tiếp.':'Có thể bấm Mua $1 để mua lượt tiếp theo.');sessionStorage.removeItem('qc-pending-order');orderId=null;if(v==='3')document.getElementById('token').value='';}catch(e){s.textContent='Chưa rõ trạng thái đơn '+orderId+'. Kiểm tra Nevermined. Nút kiểm tra lại giữ nguyên mã đơn, không tạo khoản thu mới.'}finally{b.disabled=false;b.textContent=orderId?'Kiểm tra lại đơn đang chờ':'Mua $1'}};</script></html>`));
 
 // Non-charging verification endpoint for a buyer token.
 // Never logs, stores, or settles the bearer credential.
@@ -57,6 +57,7 @@ app.post("/verify-token", async (req, res) => {
       agentId: process.env.NVM_AGENT_ID,
       httpVerb: "POST",
       network: process.env.NVM_PAYMENT_NETWORK || "stripe",
+      scheme: process.env.NVM_PAYMENT_SCHEME || (["stripe","visa","braintree"].includes(process.env.NVM_PAYMENT_NETWORK || "stripe") ? "nvm:card-delegation" : "nvm:erc4337"),
       description: "QC Agent test image"
     });
     const verification = await payments.facilitator.verifyPermissions({
@@ -76,53 +77,7 @@ app.post("/verify-token", async (req, res) => {
   }
 });
 
-app.post("/paid-image",async(req,res)=>{
-  if(!payments) return res.status(503).json({error:"MISSING_CONFIG"});
-  const paymentRequired=buildPaymentRequired(process.env.NVM_PLAN_ID,{
-    endpoint:"/paid-image",agentId:process.env.NVM_AGENT_ID,httpVerb:"POST",
-    network:process.env.NVM_PAYMENT_NETWORK||"stripe",description:"QC Agent test image"
-  });
-  const headers={"payment-required":b64(paymentRequired)};
-  const token=req.get("payment-signature");
-  if(!token) return res.set(headers).status(402).json({error:"PAYMENT_REQUIRED",message:"Buyer must supply a Nevermined x402 payment-signature."});
-  if(process.env.ENABLE_SETTLEMENT!=="true") return res.status(503).json({error:"SETTLEMENT_DISABLED"});
-  if(!await ledgerReady()) return res.status(503).json({error:"POSTGRES_LEDGER_NOT_READY"});
-  if(token.length>16384) return res.status(400).json({error:"TOKEN_TOO_LONG"});
-  // Live Nevermined currently returns v2 for some card delegations.
-  // A v2 token is reusable, so NEVER settle it without a durable ledger and
-  // explicit opt-in. Redis Free with persistence disabled is not sufficient.
-  const tokenVersion=detectAccessTokenVersion(token);
-  if(tokenVersion!==2 && tokenVersion!==3)
-    return res.status(402).json({error:"UNSUPPORTED_X402_TOKEN_VERSION"});
-  if(tokenVersion===2 && process.env.ALLOW_X402_V2!=="true")
-    return res.status(503).json({error:"V2_REQUIRES_DURABLE_REPLAY_PROTECTION"});
-  let hash;
-  try{
-    const attempt=await claim(token);hash=attempt.hash;
-    if(!attempt.newClaim){
-      const prior=await priorClaim(hash);
-      return res.status(409).json({error:prior?.status==="settled"?"PAYMENT_ALREADY_SETTLED":"PAYMENT_STATUS_UNCERTAIN_DO_NOT_RETRY"});
-    }
-    const verification=await payments.facilitator.verifyPermissions({paymentRequired,x402AccessToken:token,maxAmount:1n});
-    if(verification?.isValid!==true){
-      await finishClaim(hash,"rejected");
-      return res.status(402).json({error:"PAYMENT_VERIFICATION_FAILED"});
-    }
-    const settlement=await payments.facilitator.settlePermissions({
-      paymentRequired,x402AccessToken:token,maxAmount:1n,
-      agentRequestId:verification.agentRequest?.agentRequestId
-    });
-    const charged=settlement?.success===true &&
-      (settlement.billingModel==="pay-as-you-go"
-        ? Boolean(settlement.orderTx||settlement.transaction)
-        : Number(settlement.creditsRedeemed??"0")>0);
-    if(!charged)return res.status(502).json({error:"SETTLEMENT_NOT_CONFIRMED_CHECK_TRANSACTION_BEFORE_RETRY"});
-    await finishClaim(hash,"settled",settlement);
-    res.set("payment-response",b64(settlement));
-    return res.type("image/svg+xml").send(svg);
-  }catch(error){
-    console.error("Payment error code",error?.code||"unknown");
-    return res.status(502).json({error:"PAYMENT_UNCERTAIN_CHECK_NEVERMINED_BEFORE_RETRY"});
-  }
-});
+app.post("/paid-image",createPaidImageHandler({payments,ledgerReady,claim,priorClaim,finishClaim,
+  detectAccessTokenVersion,buildPaymentRequired,env:process.env,svg}));
 app.listen(port,()=>console.log("QC Agent Node backend listening",port));
+

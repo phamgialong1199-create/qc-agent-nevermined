@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Payments } from "@nevermined-io/payments";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
@@ -34,7 +35,7 @@ try {
   if (confirmation !== "PAY") { console.log("Cancelled; no payment request sent."); process.exit(0); }
   const paid = await fetch(new URL(resource.url, base), {
     method: "POST",
-    headers: { "payment-signature": result.accessToken }
+    headers: { "payment-signature": result.accessToken, "Idempotency-Key": randomUUID() }
   });
   if (!paid.ok) {
     const body = await paid.text();
@@ -52,3 +53,4 @@ try {
   console.error("Stopped:", e.message);
   process.exitCode = 1;
 } finally { io.close(); }
+
