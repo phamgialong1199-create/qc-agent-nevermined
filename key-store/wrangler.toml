@@ -1,0 +1,15 @@
+name = "qc-key-store"
+main = "src/worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "qc-key-store"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+[vars]
+STORE_NAME = "Digital Key Store"
+UNIT_PRICE_CENTS = "500"
+CURRENCY = "USD"
+PAYMENTS_ENABLED = "false"
