@@ -42,7 +42,7 @@ async function fixture(options={}) {
     },
     async settlePermissions(input) {
       settles++;assert.equal(input.agentRequestId,"request-"+verifies);
-      if(options.settleThrows)throw Object.assign(Error("SECRET_TOKEN"),{code:"network_error"});
+      if(options.settleThrows)throw Object.assign(Error("SECRET_TOKEN"),{code:options.settleCode||"network_error"});
       return options.unconfirmed?{success:false}:{success:true,billingModel:"pay-as-you-go",orderTx:"charge-"+settles,creditsRedeemed:"0"};
     }
   }};
@@ -142,6 +142,34 @@ test("provider error identifies phase without leaking credentials",async()=>{
   assert.equal(f.counts().verifies,1);
 });
 
+test("Visa definitive decline is persisted and returned as 402 without repeat settlement",async()=>{
+  const f=await fixture({settleThrows:true,settleCode:"BCK.X402.0049"});
+  const first=await f.request(), retry=await f.request();
+  for(const r of [first,retry]) {
+    assert.equal(r.statusCode,402);
+    assert.equal(r.body.error,"PAYMENT_DECLINED");
+    assert.equal(r.body.paymentCaptured,false);
+    assert.equal(r.body.retryable,false);
+  }
+  assert.equal(f.counts().settles,1);
+  assert.equal([...f.rows.values()][0].status,"declined");
+});
+test("ambiguous .0048 stays blocked and never claims that no charge occurred",async()=>{
+  const f=await fixture({settleThrows:true,settleCode:"BCK.X402.0048"});
+  const first=await f.request();
+  assert.equal(first.statusCode,502);
+  assert.equal(first.body.error,"PAYMENT_UNCERTAIN_CHECK_NEVERMINED_BEFORE_RETRY");
+  assert.equal(first.body.paymentCaptured,undefined);
+  assert.equal((await f.request()).statusCode,409);
+  assert.equal(f.counts().settles,1);
+});
+test("decline with unavailable ledger returns decline but retains a blocking claim",async()=>{
+  const f=await fixture({settleThrows:true,settleCode:"BCK.X402.0049",saveFails:true});
+  assert.equal((await f.request()).body.error,"PAYMENT_DECLINED");
+  assert.equal((await f.request()).statusCode,409);
+  assert.equal(f.counts().settles,1);
+});
+
 test("browser makes a new order after success and retains the order after network failure",async()=>{
   const source=await readFile(new URL("./server.mjs",import.meta.url),"utf8");
   const script=source.match(/<script>(.*?)<\/script>/s)[1];
@@ -173,4 +201,26 @@ test("browser makes a new order after success and retains the order after networ
   await elements.pay.onclick();
   assert.equal(requests[3],pending);
   assert.equal(stored.size,0);
+});
+
+test("checkout shows definitive decline and clears only the declined pending order",async()=>{
+  const source=await readFile(new URL("./server.mjs",import.meta.url),"utf8");
+  const script=source.match(/<script>(.*?)<\/script>/s)[1];
+  const elements={token:{value:"v2-token"},status:{},pay:{},result:{}};
+  const stored=new Map();
+  let requests=0;
+  runInNewContext(script,{
+    sessionStorage:{getItem:k=>stored.get(k)||null,setItem:(k,v)=>stored.set(k,v),removeItem:k=>stored.delete(k)},
+    document:{getElementById:id=>elements[id]},
+    crypto:{randomUUID},
+    async fetch() {requests++;return {ok:false,json:async()=>({
+      error:"PAYMENT_DECLINED",paymentCaptured:false,message:"Visa đã từ chối thanh toán."
+    })};}
+  });
+  await elements.pay.onclick();
+  assert.ok(elements.status.textContent.includes("Visa đã từ chối"));
+  assert.equal(elements.token.value,"");
+  assert.equal(stored.size,0);
+  await elements.pay.onclick();
+  assert.equal(requests,1);
 });

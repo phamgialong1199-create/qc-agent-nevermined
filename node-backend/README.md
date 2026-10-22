@@ -46,6 +46,12 @@ and receipts are preserved. New v2 claims are keyed by purchase UUID and bound
 to a credential hash. V3 claims retain the existing global token hash key.
 
 A processing/uncertain claim never automatically expires or re-settles.
+Nevermined BCK.X402.0049 is a definitive provider decline (no captured charge).
+It is persisted as declined and returned as HTTP 402 PAYMENT_DECLINED.
+Checkout clears that declined order and the credential so the buyer can check
+or change the payment method before a deliberate new purchase. No automatic
+payment retry is performed. BCK.X402.0048 and network errors stay uncertain.
+Catalog: https://github.com/nevermined-io/docs/blob/main/development-guide/api-errors/codes.mdx#bck-x402-0049
 Reconcile such orders against Nevermined/provider transactions before manual
 recovery; do not delete claims or generate new order IDs as a retry mechanism.
 A confirmed charge whose receipt cannot be saved remains blocked for manual

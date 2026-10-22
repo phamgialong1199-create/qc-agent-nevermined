@@ -2,6 +2,11 @@
 export function createPaidImageHandler({payments, ledgerReady, claim, priorClaim, finishClaim,
   detectAccessTokenVersion, buildPaymentRequired, env, svg, logger = console}) {
   const b64 = value => Buffer.from(JSON.stringify(value)).toString("base64");
+  const declined = (res,orderId) => res.status(402).json({
+    error:"PAYMENT_DECLINED",orderId,providerCode:"BCK.X402.0049",
+    paymentCaptured:false,retryable:false,
+    message:"Visa/nhà cung cấp đã từ chối thanh toán; không thu được tiền cho đơn này. Kiểm tra thẻ hoặc đổi phương thức thanh toán trên Nevermined trước khi mua lại."
+  });
   return async (req, res) => {
     res.set("Cache-Control", "no-store");
     if (!payments) return res.status(503).json({error:"MISSING_CONFIG"});
@@ -46,6 +51,8 @@ export function createPaidImageHandler({payments, ledgerReady, claim, priorClaim
         }
         if (prior?.status === "rejected")
           return res.status(402).json({error:"PAYMENT_VERIFICATION_FAILED",orderId});
+        if (prior?.status === "declined")
+          return declined(res,orderId);
         return res.status(409).json({error:"PAYMENT_STATUS_UNCERTAIN_DO_NOT_RETRY",orderId});
       }
       phase = "verify";
@@ -76,6 +83,17 @@ export function createPaidImageHandler({payments, ledgerReady, claim, priorClaim
       const rawCode = String(error?.code || "unknown");
       const code = /^(BCK\.[A-Z0-9.]+|http_\d{3}|network_error)$/.test(rawCode) ? rawCode : "unknown";
       logger.error("Payment error", {phase, orderId, code});
+      // Official Nevermined catalog: .0049 is a definitive provider decline
+      // with reservation rollback. .0048/timeouts remain ambiguous.
+      if (phase === "settle" && code === "BCK.X402.0049") {
+        try {
+          await finishClaim(hash,"declined",{providerCode:code,paymentCaptured:false});
+        } catch {
+          // Retain the existing claim if the database is unavailable.
+          logger.error("Payment decline persistence failed",{orderId,code});
+        }
+        return declined(res,orderId);
+      }
       return res.status(502).json({error:"PAYMENT_UNCERTAIN_CHECK_NEVERMINED_BEFORE_RETRY",orderId,providerCode:code});
     }
   };
