@@ -1,0 +1,19 @@
+name: Key Store Checks
+on:
+  push:
+    branches: [feature/cloudflare-key-store]
+    paths: ['key-store/**', '.github/workflows/key-store-check.yml']
+  pull_request:
+    paths: ['key-store/**']
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check src/worker.js && node --check src/pages.js
+        working-directory: key-store
+      - run: npm install --ignore-scripts && npx wrangler --version
+        working-directory: key-store
